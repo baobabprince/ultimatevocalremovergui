@@ -1,9 +1,9 @@
 // ONNX Runtime Web Worker for UVR5 Browser Edition
 
-importScripts("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js");
+importScripts("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js");
 
 // Set wasm paths
-ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/";
+ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
 
 let session = null;
 
@@ -291,13 +291,13 @@ self.onmessage = async function (e) {
             if (onnxDataBytes) {
                 options.externalData = [
                     {
-                        data: onnxDataBytes,
+                        data: new Uint8Array(onnxDataBytes),
                         path: "UVR-DeNoise-Lite.onnx.data"
                     }
                 ];
             }
 
-            session = await ort.InferenceSession.create(onnxBytes, options);
+            session = await ort.InferenceSession.create(new Uint8Array(onnxBytes), options);
             self.postMessage({ status: "status", data: `Model ${name} loaded successfully!` });
             self.postMessage({ status: "model-loaded" });
 
@@ -316,31 +316,36 @@ self.onmessage = async function (e) {
             const stftRight = runSTFT(rightChannel, nfft, hopLength);
             const numFrames = stftLeft.numFrames;
 
-            self.postMessage({ status: "status", data: `Running Model Inference over ${numFrames} frames...` });
+            // Pad the frame count to a multiple of 16 to prevent dimension mismatch in the U-Net skip connections
+            const paddedNumFrames = Math.ceil(numFrames / 16) * 16;
 
-            // Prepare Input Tensor: shape [1, 2, 1024, numFrames]
-            const inputTensorSize = 1 * 2 * 1024 * numFrames;
+            self.postMessage({ status: "status", data: `Running Model Inference over ${numFrames} frames (padded to ${paddedNumFrames})...` });
+
+            // Prepare Input Tensor: shape [1, 2, 1024, paddedNumFrames]
+            const inputTensorSize = 1 * 2 * 1024 * paddedNumFrames;
             const inputData = new Float32Array(inputTensorSize);
 
             // Left Channel magnitudes for bins 0..1023
             for (let b = 0; b < 1024; b++) {
-                const offsetDst = 0 * (1024 * numFrames) + b * numFrames;
+                const offsetDst = 0 * (1024 * paddedNumFrames) + b * paddedNumFrames;
                 const offsetSrc = b * numFrames;
-                for (let f = 0; f < numFrames; f++) {
-                    inputData[offsetDst + f] = stftLeft.magnitudes[offsetSrc + f];
+                for (let f = 0; f < paddedNumFrames; f++) {
+                    const srcFrame = Math.min(f, numFrames - 1);
+                    inputData[offsetDst + f] = stftLeft.magnitudes[offsetSrc + srcFrame];
                 }
             }
 
             // Right Channel magnitudes for bins 0..1023
             for (let b = 0; b < 1024; b++) {
-                const offsetDst = 1 * (1024 * numFrames) + b * numFrames;
+                const offsetDst = 1 * (1024 * paddedNumFrames) + b * paddedNumFrames;
                 const offsetSrc = b * numFrames;
-                for (let f = 0; f < numFrames; f++) {
-                    inputData[offsetDst + f] = stftRight.magnitudes[offsetSrc + f];
+                for (let f = 0; f < paddedNumFrames; f++) {
+                    const srcFrame = Math.min(f, numFrames - 1);
+                    inputData[offsetDst + f] = stftRight.magnitudes[offsetSrc + srcFrame];
                 }
             }
 
-            const inputTensor = new ort.Tensor("float32", inputData, [1, 2, 1024, numFrames]);
+            const inputTensor = new ort.Tensor("float32", inputData, [1, 2, 1024, paddedNumFrames]);
 
             const feeds = {};
             feeds[session.inputNames[0]] = inputTensor;
@@ -357,7 +362,7 @@ self.onmessage = async function (e) {
             // Dynamic dimensions of output mask to avoid indexing mismatch bugs
             const outputDims = outputTensor.dims; // [1, 2, height, width]
             const outBins = outputDims[2]; // e.g. 1025 or 1024
-            const outFrames = outputDims[3]; // numFrames
+            const outFrames = outputDims[3]; // paddedNumFrames
 
             // We need 1025 bins for iSTFT
             const vocalMagLeft = new Float32Array(1025 * numFrames);
@@ -412,6 +417,6 @@ self.onmessage = async function (e) {
             });
         }
     } catch (err) {
-        self.postMessage({ status: "error", data: err.message });
+        self.postMessage({ status: "error", data: err.stack || err.message });
     }
 };
