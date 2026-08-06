@@ -225,6 +225,9 @@ self.onmessage = async function (e) {
 
                 // Fetch with progress
                 const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`Failed to download model file (HTTP ${response.status}) - make sure the model is built and placed in the converted_models/ directory`);
+                }
                 const reader = response.body.getReader();
                 const contentLength = +response.headers.get('Content-Length') || 10000000;
                 let receivedLength = 0;
@@ -252,6 +255,9 @@ self.onmessage = async function (e) {
             if (dataUrl && !onnxDataBytes) {
                 self.postMessage({ status: "status", data: `Downloading weights data for ${name}...` });
                 const response = await fetch(dataUrl);
+                if (!response.ok) {
+                    throw new Error(`Failed to download model weights data (HTTP ${response.status}) - make sure the .data file exists under converted_models/`);
+                }
                 const reader = response.body.getReader();
                 const contentLength = +response.headers.get('Content-Length') || 18000000;
                 let receivedLength = 0;

@@ -6,6 +6,7 @@ We have successfully implemented a fully client-side, browser-based edition of t
 
 ### Key Features:
 - **100% Client-Side Processing:** All audio file decoding, STFT, model inference, and iSTFT reconstruction are processed natively in the user's browser. No audio is ever uploaded to a server, ensuring total privacy.
+- **No Python or Build Steps Required:** The web application is 100% static. You do not need to run any Python commands, servers, or compilers to use or deploy it. Simply open `index.html` in your browser!
 - **WebGPU & WASM Acceleration:** Uses ONNX Runtime Web with WebGPU for lightning-fast hardware acceleration, falling back gracefully to WebAssembly on CPUs if WebGPU is unavailable.
 - **Background Web Workers:** Inference and heavy math run on a separate thread, keeping the user interface smooth and responsive.
 - **Bilingual Localization:** Fully localized in both **English and Hebrew** with fully responsive LTR and RTL layouts.
@@ -19,6 +20,7 @@ We have successfully implemented a fully client-side, browser-based edition of t
 
 #### תכונות מרכזיות:
 - **עיבוד מקומי מלא:** פענוח האודיו, הרצת מודל ה-AI, ושחזור הקבצים מתבצעים על המחשב המקומי של המשתמש. שום מידע אינו נשלח לשרת חיצוני - שמירה מלאה על פרטיות!
+- **ללא צורך בפייתון או בשרת:** האפליקציה היא 100% סטטית. אין צורך להריץ פקודות פייתון, שרתים או קומפיילרים כדי להשתמש בה או לפרוס אותה. פשוט פתחו את `index.html` בדפדפן!
 - **האצת חומרה WebGPU/WASM:** שימוש ב-ONNX Runtime Web להרצת מודלי רשת נוירונים מהירה באמצעות כרטיס המסך (GPU) או מעבד המחשב (WASM) כגיבוי.
 - **הרצה ברקע (Web Worker):** העיבוד המורכב מתבצע בתהליכון נפרד כדי למנוע את קפיאת הממשק.
 - **תמיכה דו-לשונית מלאה:** ממשק משתמש נוח ואינטראקטיבי בעברית ובאנגלית עם כיווניות תצוגה מותאמת (RTL / LTR).
