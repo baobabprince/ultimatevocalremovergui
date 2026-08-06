@@ -1,5 +1,50 @@
-# Ultimate Vocal Remover GUI v5.6
+# Ultimate Vocal Remover GUI - Web Edition (גרסת דפדפן)
 <img src="https://raw.githubusercontent.com/Anjok07/ultimatevocalremovergui/master/gui_data/img/UVR_v5.6.png?raw=true" />
+
+## 🌐 Ultimate Vocal Remover Browser Edition (Client-Side)
+We have successfully implemented a fully client-side, browser-based edition of the Ultimate Vocal Remover, designed to be easily hosted on **GitHub Pages** with zero-configuration!
+
+### Key Features:
+- **100% Client-Side Processing:** All audio file decoding, STFT, model inference, and iSTFT reconstruction are processed natively in the user's browser. No audio is ever uploaded to a server, ensuring total privacy.
+- **No Python or Build Steps Required:** The web application is 100% static. You do not need to run any Python commands, servers, or compilers to use or deploy it. Simply open `index.html` in your browser!
+- **WebGPU & WASM Acceleration:** Uses ONNX Runtime Web with WebGPU for lightning-fast hardware acceleration, falling back gracefully to WebAssembly on CPUs if WebGPU is unavailable.
+- **Background Web Workers:** Inference and heavy math run on a separate thread, keeping the user interface smooth and responsive.
+- **Bilingual Localization:** Fully localized in both **English and Hebrew** with fully responsive LTR and RTL layouts.
+- **Offline Model Caching:** Uses IndexedDB to cache the downloaded `.onnx` model files so they only need to be downloaded once.
+- **Audio Tools:** Built-in WSOLA time-stretching, resampling-based pitch-shifting, track alignment, and Min/Max/Average ensembling.
+
+---
+
+### 🇮🇱 גרסת הדפדפן של Ultimate Vocal Remover (צד לקוח בלבד)
+פיתחנו גרסה ייחודית של התוכנה הפועלת במלואה ישירות בדפדפן (Client-Side HTML/JS) ללא צורך בשרת, עם התאמה מושלמת להרצה ב-**GitHub Pages** בלחיצת כפתור!
+
+#### תכונות מרכזיות:
+- **עיבוד מקומי מלא:** פענוח האודיו, הרצת מודל ה-AI, ושחזור הקבצים מתבצעים על המחשב המקומי של המשתמש. שום מידע אינו נשלח לשרת חיצוני - שמירה מלאה על פרטיות!
+- **ללא צורך בפייתון או בשרת:** האפליקציה היא 100% סטטית. אין צורך להריץ פקודות פייתון, שרתים או קומפיילרים כדי להשתמש בה או לפרוס אותה. פשוט פתחו את `index.html` בדפדפן!
+- **האצת חומרה WebGPU/WASM:** שימוש ב-ONNX Runtime Web להרצת מודלי רשת נוירונים מהירה באמצעות כרטיס המסך (GPU) או מעבד המחשב (WASM) כגיבוי.
+- **הרצה ברקע (Web Worker):** העיבוד המורכב מתבצע בתהליכון נפרד כדי למנוע את קפיאת הממשק.
+- **תמיכה דו-לשונית מלאה:** ממשק משתמש נוח ואינטראקטיבי בעברית ובאנגלית עם כיווניות תצוגה מותאמת (RTL / LTR).
+- **שמירת מודלים מקומית:** שמירת המודלים בזיכרון הדפדפן (IndexedDB) כך שיש להוריד אותם פעם אחת בלבד.
+- **כלי אודיו מתקדמים:** שינוי גובה צליל (Pitch), מתיחת זמן (Time Stretch), יישור סנכרון בין קבצים, ואיחוד מודלים (Ensemble).
+
+---
+
+### 🚀 Running Locally or Deploying to GitHub Pages
+To host this web application, simply enable **GitHub Pages** in your repository settings:
+1. Go to your GitHub repository -> **Settings** -> **Pages**.
+2. Under **Build and deployment**, select **Deploy from a branch** and choose the `main` branch and `/ (root)` folder.
+3. Click **Save**. Within a few minutes, your site will be live at `https://<your-username>.github.io/<your-repo-name>/`.
+
+#### To run locally:
+Simply spin up any static HTTP server in the root of the repository, for example:
+```bash
+python -m http.server 8000
+```
+Then open `http://localhost:8000` in your web browser.
+
+---
+
+# Ultimate Vocal Remover GUI v5.6
 
 [![Release](https://img.shields.io/github/release/anjok07/ultimatevocalremovergui.svg)](https://github.com/anjok07/ultimatevocalremovergui/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/anjok07/ultimatevocalremovergui/total.svg)](https://github.com/anjok07/ultimatevocalremovergui/releases)

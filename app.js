@@ -60,8 +60,8 @@ let selectedModelName = "UVR-DeNoise-Lite";
 const modelsList = [
     {
         name: "UVR-DeNoise-Lite",
-        url: "../converted_models/UVR-DeNoise-Lite.onnx",
-        dataUrl: "../converted_models/UVR-DeNoise-Lite.onnx.data"
+        url: "./converted_models/UVR-DeNoise-Lite.onnx",
+        dataUrl: "./converted_models/UVR-DeNoise-Lite.onnx.data"
     }
 ];
 
