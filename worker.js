@@ -1,5 +1,5 @@
 // ONNX Runtime Web Worker for UVR5 Browser Edition
-// v3: resilient downloads with retries + fallbacks (fixes "TypeError: network error")
+// v3.1: resilient downloads + accept Content-Length mismatches (CDN/proxy)
 
 importScripts("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js");
 
@@ -55,12 +55,9 @@ function sleep(ms) {
 }
 
 /**
- * Robust download with:
- * - retries (3-4 attempts)
- * - exponential backoff
- * - AbortController timeout
- * - optional fallback URLs
- * - progress reporting
+ * Robust download with retries, timeout, fallbacks.
+ * Content-Length from CDNs/proxies is often wrong — we only fail if we got
+ * significantly FEWER bytes than advertised. Getting more is accepted.
  */
 async function fetchAsArrayBuffer(url, onProgress, options = {}) {
     const {
@@ -109,14 +106,18 @@ async function fetchAsArrayBuffer(url, onProgress, options = {}) {
                     if (done) break;
                     chunks.push(value);
                     receivedLength += value.length;
-                    if (onProgress && contentLength > 0) {
-                        onProgress(Math.min(100, Math.round((receivedLength / contentLength) * 100)));
-                    } else if (onProgress && receivedLength > 0) {
-                        onProgress(Math.min(99, Math.round(receivedLength / (1024 * 1024))));
+                    if (onProgress) {
+                        if (contentLength > 0) {
+                            onProgress(Math.min(99, Math.round((receivedLength / contentLength) * 100)));
+                        } else {
+                            onProgress(Math.min(99, Math.round(receivedLength / (1024 * 1024))));
+                        }
                     }
                 }
 
-                if (contentLength > 0 && receivedLength !== contentLength) {
+                // Content-Length can be wrong (CDN/proxy/compression). Trust a completed stream.
+                // Only fail if we got significantly FEWER bytes than advertised.
+                if (contentLength > 0 && receivedLength < contentLength * 0.9) {
                     throw new Error(
                         `Incomplete download: got ${receivedLength} of ${contentLength} bytes`
                     );
@@ -126,12 +127,20 @@ async function fetchAsArrayBuffer(url, onProgress, options = {}) {
                     throw new Error("Downloaded empty file");
                 }
 
+                if (contentLength > 0 && receivedLength !== contentLength) {
+                    self.postMessage({
+                        status: "status",
+                        data: `Note: size mismatch (got ${receivedLength}, header ${contentLength}) – accepting completed download`
+                    });
+                }
+
                 const result = new Uint8Array(receivedLength);
                 let position = 0;
                 for (const chunk of chunks) {
                     result.set(chunk, position);
                     position += chunk.length;
                 }
+                if (onProgress) onProgress(100);
                 return result.buffer;
             } catch (err) {
                 lastError = err;
