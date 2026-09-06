@@ -1,14 +1,16 @@
-// ONNX Runtime Web Worker for UVR5 Browser Edition
+// ONNX Runtime Web Worker for UVR5 Browser Edition - Fixed for protobuf / external data loading
 
-importScripts("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js");
+importScripts("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js");
 
-// Set wasm paths
-ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
+// Set wasm paths to matching version
+ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
+ort.env.wasm.numThreads = 1; // more stable in browser
+ort.env.logLevel = "warning";
 
 let session = null;
 
 // IndexedDB Caching for Model files
-const DB_NAME = "UVR_Model_Cache";
+const DB_NAME = "UVR_Model_Cache_v2";
 const STORE_NAME = "models";
 
 function openDB() {
@@ -32,7 +34,7 @@ function getCache(key) {
             const store = transaction.objectStore(STORE_NAME);
             const request = store.get(key);
             request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.onerror);
+            request.onerror = () => reject(request.error);
         });
     });
 }
@@ -44,9 +46,36 @@ function setCache(key, val) {
             const store = transaction.objectStore(STORE_NAME);
             const request = store.put(val, key);
             request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.onerror);
+            request.onerror = () => reject(request.error);
         });
     });
+}
+
+async function fetchAsArrayBuffer(url, onProgress) {
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`Failed to download ${url} (HTTP ${response.status})`);
+    }
+    const contentLength = +response.headers.get("Content-Length") || 0;
+    const reader = response.body.getReader();
+    let receivedLength = 0;
+    const chunks = [];
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        receivedLength += value.length;
+        if (onProgress && contentLength) {
+            onProgress(Math.round((receivedLength / contentLength) * 100));
+        }
+    }
+    const result = new Uint8Array(receivedLength);
+    let position = 0;
+    for (const chunk of chunks) {
+        result.set(chunk, position);
+        position += chunk.length;
+    }
+    return result.buffer; // return pure ArrayBuffer
 }
 
 // FFT helper functions
@@ -96,7 +125,6 @@ function fft(re, im) {
     }
 }
 
-// Reflection padding helper
 function padReflect(x, pad) {
     const padded = new Float32Array(x.length + 2 * pad);
     padded.set(x, pad);
@@ -109,14 +137,12 @@ function padReflect(x, pad) {
     return padded;
 }
 
-// STFT and iSTFT engine
 function runSTFT(signal, nfft, hopLength) {
     const pad = nfft / 2;
     const padded = padReflect(signal, pad);
     const numFrames = Math.floor((padded.length - nfft) / hopLength) + 1;
     const numBins = nfft / 2 + 1;
 
-    // Hanning Window
     const window = new Float32Array(nfft);
     for (let i = 0; i < nfft; i++) {
         window[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (nfft - 1)));
@@ -175,7 +201,7 @@ function runISTFT(magnitudes, phases, nfft, hopLength, originalLength) {
             im[b] = mag * Math.sin(phase);
         }
 
-        // Conjugate symmetry
+        // Conjugate symmetry for real signal
         for (let b = 1; b < nfft / 2; b++) {
             re[nfft - b] = re[b];
             im[nfft - b] = -im[b];
@@ -183,7 +209,8 @@ function runISTFT(magnitudes, phases, nfft, hopLength, originalLength) {
         im[0] = 0.0;
         im[nfft / 2] = 0.0;
 
-        fft(re, im); // Using FFT instead of ifft to avoid extra inverse imaginary flip
+        // Inverse FFT via forward FFT + scale (valid for Hermitian input)
+        fft(re, im);
         for (let i = 0; i < nfft; i++) {
             re[i] /= nfft;
         }
@@ -205,7 +232,6 @@ function runISTFT(magnitudes, phases, nfft, hopLength, originalLength) {
     return output;
 }
 
-// Listen for messages from main thread
 self.onmessage = async function (e) {
     const { action, data } = e.data;
 
@@ -215,89 +241,59 @@ self.onmessage = async function (e) {
             self.postMessage({ status: "status", data: `checking cache for ${name}...` });
 
             let onnxBytes = await getCache(name);
-            let onnxDataBytes = null;
-            if (dataUrl) {
-                onnxDataBytes = await getCache(name + ".data");
-            }
+            let onnxDataBytes = dataUrl ? await getCache(name + ".data") : null;
 
             if (!onnxBytes) {
-                self.postMessage({ status: "status", data: `Downloading ${name} (may take a few minutes)...` });
-
-                // Fetch with progress
-                const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error(`Failed to download model file (HTTP ${response.status}) - make sure the model is built and placed in the converted_models/ directory`);
-                }
-                const reader = response.body.getReader();
-                const contentLength = +response.headers.get('Content-Length') || 10000000;
-                let receivedLength = 0;
-                let chunks = [];
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    chunks.push(value);
-                    receivedLength += value.length;
+                self.postMessage({ status: "status", data: `Downloading ${name}...` });
+                onnxBytes = await fetchAsArrayBuffer(url, (percent) => {
                     self.postMessage({
                         status: "download-progress",
-                        data: { name, percent: Math.round((receivedLength / contentLength) * 100) }
+                        data: { name, percent }
                     });
-                }
-                const positionBytes = new Uint8Array(receivedLength);
-                let position = 0;
-                for (let chunk of chunks) {
-                    positionBytes.set(chunk, position);
-                    position += chunk.length;
-                }
-                onnxBytes = positionBytes.buffer;
+                });
                 await setCache(name, onnxBytes);
             }
 
             if (dataUrl && !onnxDataBytes) {
                 self.postMessage({ status: "status", data: `Downloading weights data for ${name}...` });
-                const response = await fetch(dataUrl);
-                if (!response.ok) {
-                    throw new Error(`Failed to download model weights data (HTTP ${response.status}) - make sure the .data file exists under converted_models/`);
-                }
-                const reader = response.body.getReader();
-                const contentLength = +response.headers.get('Content-Length') || 18000000;
-                let receivedLength = 0;
-                let chunks = [];
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    chunks.push(value);
-                    receivedLength += value.length;
+                onnxDataBytes = await fetchAsArrayBuffer(dataUrl, (percent) => {
                     self.postMessage({
                         status: "download-progress",
-                        data: { name: name + " data", percent: Math.round((receivedLength / contentLength) * 100) }
+                        data: { name: name + " data", percent }
                     });
-                }
-                const positionBytes = new Uint8Array(receivedLength);
-                let position = 0;
-                for (let chunk of chunks) {
-                    positionBytes.set(chunk, position);
-                    position += chunk.length;
-                }
-                onnxDataBytes = positionBytes.buffer;
+                });
                 await setCache(name + ".data", onnxDataBytes);
             }
 
-            self.postMessage({ status: "status", data: `Initializing ONNX Session (WebGPU / WASM)...` });
+            self.postMessage({ status: "status", data: `Initializing ONNX Session (trying WebGPU then WASM)...` });
 
-            // Initialize ONNX Session
-            const options = {
-                executionProviders: ["webgpu", "wasm"],
+            // Ensure pure ArrayBuffers
+            if (onnxBytes instanceof Uint8Array) onnxBytes = onnxBytes.buffer;
+            if (onnxDataBytes instanceof Uint8Array) onnxDataBytes = onnxDataBytes.buffer;
+
+            const sessionOptions = {
+                executionProviders: ["wasm"], // start with wasm which is more reliable for complex models
+                graphOptimizationLevel: "all",
             };
+
             if (onnxDataBytes) {
-                options.externalData = [
+                sessionOptions.externalData = [
                     {
-                        data: new Uint8Array(onnxDataBytes),
+                        data: onnxDataBytes,           // ArrayBuffer
                         path: "UVR-DeNoise-Lite.onnx.data"
                     }
                 ];
             }
 
-            session = await ort.InferenceSession.create(new Uint8Array(onnxBytes), options);
+            try {
+                session = await ort.InferenceSession.create(onnxBytes, sessionOptions);
+            } catch (firstErr) {
+                self.postMessage({ status: "status", data: `WASM failed, trying with webgpu fallback... ${firstErr.message}` });
+                // retry without externalData path issues or with different provider order
+                sessionOptions.executionProviders = ["webgpu", "wasm"];
+                session = await ort.InferenceSession.create(onnxBytes, sessionOptions);
+            }
+
             self.postMessage({ status: "status", data: `Model ${name} loaded successfully!` });
             self.postMessage({ status: "model-loaded" });
 
@@ -316,12 +312,11 @@ self.onmessage = async function (e) {
             const stftRight = runSTFT(rightChannel, nfft, hopLength);
             const numFrames = stftLeft.numFrames;
 
-            // Pad the frame count to a multiple of 16 to prevent dimension mismatch in the U-Net skip connections
+            // Pad the frame count to a multiple of 16
             const paddedNumFrames = Math.ceil(numFrames / 16) * 16;
 
             self.postMessage({ status: "status", data: `Running Model Inference over ${numFrames} frames (padded to ${paddedNumFrames})...` });
 
-            // Prepare Input Tensor: shape [1, 2, 1024, paddedNumFrames]
             const inputTensorSize = 1 * 2 * 1024 * paddedNumFrames;
             const inputData = new Float32Array(inputTensorSize);
 
@@ -355,16 +350,14 @@ self.onmessage = async function (e) {
             self.postMessage({ status: "processing-progress", data: 60 });
 
             const outputTensor = results[session.outputNames[0]];
-            const outputMask = outputTensor.data; // Float32Array
+            const outputMask = outputTensor.data;
 
             self.postMessage({ status: "status", data: "Reconstructing separated audio channels..." });
 
-            // Dynamic dimensions of output mask to avoid indexing mismatch bugs
-            const outputDims = outputTensor.dims; // [1, 2, height, width]
-            const outBins = outputDims[2]; // e.g. 1025 or 1024
-            const outFrames = outputDims[3]; // paddedNumFrames
+            const outputDims = outputTensor.dims;
+            const outBins = outputDims[2];
+            const outFrames = outputDims[3];
 
-            // We need 1025 bins for iSTFT
             const vocalMagLeft = new Float32Array(1025 * numFrames);
             const vocalMagRight = new Float32Array(1025 * numFrames);
             const instMagLeft = new Float32Array(1025 * numFrames);
@@ -374,7 +367,6 @@ self.onmessage = async function (e) {
                 const offsetSrc = b * numFrames;
 
                 for (let f = 0; f < numFrames; f++) {
-                    // Fetch mask using precise dynamic dimensions with secure fallback
                     let maskL = 1.0;
                     let maskR = 1.0;
 
@@ -385,8 +377,8 @@ self.onmessage = async function (e) {
                         maskR = outputMask[offsetRight];
                     }
 
-                    const originalL = stftLeft.magnitudes[offsetSrc + f];
-                    const originalR = stftRight.magnitudes[offsetSrc + f];
+                    const originalL = stftLeft.magnitudes[offsetSrc + f] || 0;
+                    const originalR = stftRight.magnitudes[offsetSrc + f] || 0;
 
                     vocalMagLeft[offsetSrc + f] = maskL * originalL;
                     vocalMagRight[offsetSrc + f] = maskR * originalR;
@@ -398,7 +390,6 @@ self.onmessage = async function (e) {
 
             self.postMessage({ status: "processing-progress", data: 80 });
 
-            // Run iSTFT
             const vocalLeft = runISTFT(vocalMagLeft, stftLeft.phases, nfft, hopLength, originalLength);
             const vocalRight = runISTFT(vocalMagRight, stftRight.phases, nfft, hopLength, originalLength);
 
@@ -417,6 +408,6 @@ self.onmessage = async function (e) {
             });
         }
     } catch (err) {
-        self.postMessage({ status: "error", data: err.stack || err.message });
+        self.postMessage({ status: "error", data: (err && (err.stack || err.message)) || String(err) });
     }
 };
