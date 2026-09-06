@@ -183,3 +183,6 @@ function ensembleSignals(signals, method = "Average") {
 if (typeof module !== "undefined" && module.exports) {
     module.exports = { pitchShift, timeStretch, resample, alignAudio, matchVolume, ensembleSignals };
 }
+
+// ESM exports for test runners
+export { pitchShift, timeStretch, resample, alignAudio, matchVolume, ensembleSignals };
