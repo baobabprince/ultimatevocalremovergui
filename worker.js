@@ -1,5 +1,5 @@
 // ONNX Runtime Web Worker for UVR5 Browser Edition
-// v3.1: resilient downloads + accept Content-Length mismatches (CDN/proxy)
+// v3.1 + cache v4: resilient downloads + accept Content-Length mismatches
 
 importScripts("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js");
 
@@ -9,7 +9,7 @@ ort.env.logLevel = "warning";
 
 let session = null;
 
-const DB_NAME = "UVR_Model_Cache_v3";
+const DB_NAME = "UVR_Model_Cache_v4";
 const STORE_NAME = "models";
 
 function openDB() {
@@ -54,15 +54,10 @@ function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
 }
 
-/**
- * Robust download with retries, timeout, fallbacks.
- * Content-Length from CDNs/proxies is often wrong — we only fail if we got
- * significantly FEWER bytes than advertised. Getting more is accepted.
- */
 async function fetchAsArrayBuffer(url, onProgress, options = {}) {
     const {
         maxRetries = 3,
-        timeoutMs = 120000,
+        timeoutMs = 180000,
         fallbackUrls = []
     } = options;
 
@@ -115,8 +110,6 @@ async function fetchAsArrayBuffer(url, onProgress, options = {}) {
                     }
                 }
 
-                // Content-Length can be wrong (CDN/proxy/compression). Trust a completed stream.
-                // Only fail if we got significantly FEWER bytes than advertised.
                 if (contentLength > 0 && receivedLength < contentLength * 0.9) {
                     throw new Error(
                         `Incomplete download: got ${receivedLength} of ${contentLength} bytes`
@@ -162,7 +155,7 @@ async function fetchAsArrayBuffer(url, onProgress, options = {}) {
 
     throw new Error(
         `Failed to download model after retries. Last error: ${lastError && (lastError.message || lastError)}. ` +
-        `Check your network connection and try again. The weights file is ~17 MB.`
+        `Check your network connection and try again.`
     );
 }
 
@@ -322,13 +315,13 @@ self.onmessage = async function (e) {
                 `https://baobabprince.github.io/ultimatevocalremovergui/converted_models/${baseName}.onnx`,
                 `https://raw.githubusercontent.com/baobabprince/ultimatevocalremovergui/master/converted_models/${baseName}.onnx`
             ];
-            const dataFallbacks = [
+            const dataFallbacks = dataUrl ? [
                 `https://baobabprince.github.io/ultimatevocalremovergui/converted_models/${baseName}.onnx.data`,
                 `https://raw.githubusercontent.com/baobabprince/ultimatevocalremovergui/master/converted_models/${baseName}.onnx.data`
-            ];
+            ] : [];
 
             if (!onnxBytes) {
-                self.postMessage({ status: "status", data: `Downloading ${name} (~0.9 MB)...` });
+                self.postMessage({ status: "status", data: `Downloading ${name} (~18 MB)...` });
                 onnxBytes = await fetchAsArrayBuffer(
                     url,
                     (percent) => {
@@ -337,7 +330,7 @@ self.onmessage = async function (e) {
                             data: { name, percent }
                         });
                     },
-                    { fallbackUrls: onnxFallbacks, timeoutMs: 60000 }
+                    { fallbackUrls: onnxFallbacks, timeoutMs: 180000, maxRetries: 4 }
                 );
                 await setCache(name, onnxBytes);
                 self.postMessage({ status: "status", data: `${name} downloaded & cached.` });
@@ -348,7 +341,7 @@ self.onmessage = async function (e) {
             if (dataUrl && !onnxDataBytes) {
                 self.postMessage({
                     status: "status",
-                    data: `Downloading weights data for ${name} (~17 MB – may take a minute on slow connections)...`
+                    data: `Downloading weights data for ${name}...`
                 });
                 onnxDataBytes = await fetchAsArrayBuffer(
                     dataUrl,
@@ -362,8 +355,6 @@ self.onmessage = async function (e) {
                 );
                 await setCache(name + ".data", onnxDataBytes);
                 self.postMessage({ status: "status", data: `Weights data downloaded & cached.` });
-            } else if (dataUrl) {
-                self.postMessage({ status: "status", data: `Weights data loaded from cache.` });
             }
 
             self.postMessage({ status: "status", data: `Initializing ONNX Session (WASM)...` });
