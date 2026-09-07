@@ -1,5 +1,5 @@
 // ONNX Runtime Web Worker for UVR5 Browser Edition
-// v3.1 + cache v4: resilient downloads + accept Content-Length mismatches
+// cache v4 + size sanity check for missing/corrupt model files
 
 importScripts("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js");
 
@@ -134,6 +134,15 @@ async function fetchAsArrayBuffer(url, onProgress, options = {}) {
                     position += chunk.length;
                 }
                 if (onProgress) onProgress(100);
+
+                // Real UVR ONNX is many MB; empty/corrupt GitHub uploads are a few bytes
+                if (receivedLength < 1000000) {
+                    throw new Error(
+                        `Model file is too small (${receivedLength} bytes). ` +
+                        `The ONNX on GitHub is missing or corrupted. ` +
+                        `Please upload the full ~18 MB UVR-DeNoise-Lite.onnx to converted_models/.`
+                    );
+                }
                 return result.buffer;
             } catch (err) {
                 lastError = err;
@@ -335,14 +344,29 @@ self.onmessage = async function (e) {
                 await setCache(name, onnxBytes);
                 self.postMessage({ status: "status", data: `${name} downloaded & cached.` });
             } else {
-                self.postMessage({ status: "status", data: `${name} loaded from cache.` });
+                // Reject cached tiny/corrupt models
+                const cachedSize = onnxBytes.byteLength || (onnxBytes.length || 0);
+                if (cachedSize < 1000000) {
+                    self.postMessage({ status: "status", data: `Cached model too small (${cachedSize} bytes) – re-downloading...` });
+                    onnxBytes = null;
+                    onnxBytes = await fetchAsArrayBuffer(
+                        url,
+                        (percent) => {
+                            self.postMessage({
+                                status: "download-progress",
+                                data: { name, percent }
+                            });
+                        },
+                        { fallbackUrls: onnxFallbacks, timeoutMs: 180000, maxRetries: 4 }
+                    );
+                    await setCache(name, onnxBytes);
+                } else {
+                    self.postMessage({ status: "status", data: `${name} loaded from cache.` });
+                }
             }
 
             if (dataUrl && !onnxDataBytes) {
-                self.postMessage({
-                    status: "status",
-                    data: `Downloading weights data for ${name}...`
-                });
+                self.postMessage({ status: "status", data: `Downloading weights data for ${name}...` });
                 onnxDataBytes = await fetchAsArrayBuffer(
                     dataUrl,
                     (percent) => {
@@ -354,7 +378,6 @@ self.onmessage = async function (e) {
                     { fallbackUrls: dataFallbacks, timeoutMs: 180000, maxRetries: 4 }
                 );
                 await setCache(name + ".data", onnxDataBytes);
-                self.postMessage({ status: "status", data: `Weights data downloaded & cached.` });
             }
 
             self.postMessage({ status: "status", data: `Initializing ONNX Session (WASM)...` });
