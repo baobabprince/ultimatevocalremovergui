@@ -1,5 +1,5 @@
 // ONNX Runtime Web Worker for UVR5 Browser Edition
-// cache v4 + size sanity check; model file: UVR-DeNoise-Lite-single.onnx
+// cache v4 + chunked inference to avoid OOM on long files
 
 importScripts("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js");
 
@@ -421,43 +421,72 @@ self.onmessage = async function (e) {
             const stftLeft = runSTFT(leftChannel, nfft, hopLength);
             const stftRight = runSTFT(rightChannel, nfft, hopLength);
             const numFrames = stftLeft.numFrames;
-            const paddedNumFrames = Math.ceil(numFrames / 16) * 16;
 
+            // Chunked inference – avoids WASM OOM on long tracks
+            const CHUNK = 256;
+            const maskLAll = new Float32Array(1025 * numFrames);
+            const maskRAll = new Float32Array(1025 * numFrames);
+            maskLAll.fill(1);
+            maskRAll.fill(1);
+
+            const numChunks = Math.ceil(numFrames / CHUNK);
             self.postMessage({
                 status: "status",
-                data: `Running Model Inference over ${numFrames} frames (padded to ${paddedNumFrames})...`
+                data: `Running Model Inference: ${numFrames} frames in ${numChunks} chunks of ${CHUNK}...`
             });
 
-            const inputData = new Float32Array(1 * 2 * 1024 * paddedNumFrames);
+            for (let c = 0; c < numChunks; c++) {
+                const f0 = c * CHUNK;
+                const f1 = Math.min(numFrames, f0 + CHUNK);
+                const chunkLen = f1 - f0;
+                const paddedLen = Math.ceil(chunkLen / 16) * 16;
 
-            for (let b = 0; b < 1024; b++) {
-                const offsetDst = 0 * (1024 * paddedNumFrames) + b * paddedNumFrames;
-                const offsetSrc = b * numFrames;
-                for (let f = 0; f < paddedNumFrames; f++) {
-                    inputData[offsetDst + f] = stftLeft.magnitudes[offsetSrc + Math.min(f, numFrames - 1)];
+                const inputData = new Float32Array(1 * 2 * 1024 * paddedLen);
+                for (let b = 0; b < 1024; b++) {
+                    const offsetDst = b * paddedLen;
+                    const offsetSrc = b * numFrames + f0;
+                    for (let f = 0; f < paddedLen; f++) {
+                        const srcF = Math.min(f, chunkLen - 1);
+                        inputData[offsetDst + f] = stftLeft.magnitudes[offsetSrc + srcF];
+                    }
                 }
-            }
-            for (let b = 0; b < 1024; b++) {
-                const offsetDst = 1 * (1024 * paddedNumFrames) + b * paddedNumFrames;
-                const offsetSrc = b * numFrames;
-                for (let f = 0; f < paddedNumFrames; f++) {
-                    inputData[offsetDst + f] = stftRight.magnitudes[offsetSrc + Math.min(f, numFrames - 1)];
+                for (let b = 0; b < 1024; b++) {
+                    const offsetDst = 1024 * paddedLen + b * paddedLen;
+                    const offsetSrc = b * numFrames + f0;
+                    for (let f = 0; f < paddedLen; f++) {
+                        const srcF = Math.min(f, chunkLen - 1);
+                        inputData[offsetDst + f] = stftRight.magnitudes[offsetSrc + srcF];
+                    }
                 }
+
+                const inputTensor = new ort.Tensor("float32", inputData, [1, 2, 1024, paddedLen]);
+                const feeds = {};
+                feeds[session.inputNames[0]] = inputTensor;
+
+                const results = await session.run(feeds);
+                const outputTensor = results[session.outputNames[0]];
+                const outputMask = outputTensor.data;
+                const outBins = outputTensor.dims[2];
+                const outFrames = outputTensor.dims[3];
+
+                for (let b = 0; b < Math.min(1025, outBins); b++) {
+                    for (let f = 0; f < chunkLen; f++) {
+                        if (f < outFrames) {
+                            maskLAll[b * numFrames + f0 + f] =
+                                outputMask[0 * (outBins * outFrames) + b * outFrames + f];
+                            maskRAll[b * numFrames + f0 + f] =
+                                outputMask[1 * (outBins * outFrames) + b * outFrames + f];
+                        }
+                    }
+                }
+
+                const pct = Math.round(10 + (50 * (c + 1)) / numChunks);
+                self.postMessage({ status: "processing-progress", data: pct });
+                self.postMessage({
+                    status: "status",
+                    data: `Chunk ${c + 1}/${numChunks} done`
+                });
             }
-
-            const inputTensor = new ort.Tensor("float32", inputData, [1, 2, 1024, paddedNumFrames]);
-            const feeds = {};
-            feeds[session.inputNames[0]] = inputTensor;
-
-            self.postMessage({ status: "processing-progress", data: 10 });
-            const results = await session.run(feeds);
-            self.postMessage({ status: "processing-progress", data: 60 });
-
-            const outputTensor = results[session.outputNames[0]];
-            const outputMask = outputTensor.data;
-            const outputDims = outputTensor.dims;
-            const outBins = outputDims[2];
-            const outFrames = outputDims[3];
 
             self.postMessage({ status: "status", data: "Reconstructing separated audio channels..." });
 
@@ -469,17 +498,14 @@ self.onmessage = async function (e) {
             for (let b = 0; b < 1025; b++) {
                 const offsetSrc = b * numFrames;
                 for (let f = 0; f < numFrames; f++) {
-                    let maskL = 1.0, maskR = 1.0;
-                    if (b < outBins && f < outFrames) {
-                        maskL = outputMask[0 * (outBins * outFrames) + b * outFrames + f];
-                        maskR = outputMask[1 * (outBins * outFrames) + b * outFrames + f];
-                    }
+                    const mL = maskLAll[offsetSrc + f];
+                    const mR = maskRAll[offsetSrc + f];
                     const originalL = stftLeft.magnitudes[offsetSrc + f] || 0;
                     const originalR = stftRight.magnitudes[offsetSrc + f] || 0;
-                    vocalMagLeft[offsetSrc + f] = maskL * originalL;
-                    vocalMagRight[offsetSrc + f] = maskR * originalR;
-                    instMagLeft[offsetSrc + f] = (1.0 - maskL) * originalL;
-                    instMagRight[offsetSrc + f] = (1.0 - maskR) * originalR;
+                    vocalMagLeft[offsetSrc + f] = mL * originalL;
+                    vocalMagRight[offsetSrc + f] = mR * originalR;
+                    instMagLeft[offsetSrc + f] = (1.0 - mL) * originalL;
+                    instMagRight[offsetSrc + f] = (1.0 - mR) * originalR;
                 }
             }
 
