@@ -1,5 +1,5 @@
 // ONNX Runtime Web Worker for UVR5 Browser Edition
-// cache v4 + size sanity check for missing/corrupt model files
+// cache v4 + size sanity check; model file: UVR-DeNoise-Lite-single.onnx
 
 importScripts("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js");
 
@@ -135,12 +135,10 @@ async function fetchAsArrayBuffer(url, onProgress, options = {}) {
                 }
                 if (onProgress) onProgress(100);
 
-                // Real UVR ONNX is many MB; empty/corrupt GitHub uploads are a few bytes
                 if (receivedLength < 1000000) {
                     throw new Error(
                         `Model file is too small (${receivedLength} bytes). ` +
-                        `The ONNX on GitHub is missing or corrupted. ` +
-                        `Please upload the full ~18 MB UVR-DeNoise-Lite.onnx to converted_models/.`
+                        `Expected UVR-DeNoise-Lite-single.onnx (~18 MB) in converted_models/.`
                     );
                 }
                 return result.buffer;
@@ -319,14 +317,13 @@ self.onmessage = async function (e) {
             let onnxBytes = await getCache(name);
             let onnxDataBytes = dataUrl ? await getCache(name + ".data") : null;
 
-            const baseName = name;
             const onnxFallbacks = [
-                `https://baobabprince.github.io/ultimatevocalremovergui/converted_models/${baseName}.onnx`,
-                `https://raw.githubusercontent.com/baobabprince/ultimatevocalremovergui/master/converted_models/${baseName}.onnx`
+                `https://baobabprince.github.io/ultimatevocalremovergui/converted_models/UVR-DeNoise-Lite-single.onnx`,
+                `https://raw.githubusercontent.com/baobabprince/ultimatevocalremovergui/master/converted_models/UVR-DeNoise-Lite-single.onnx`
             ];
             const dataFallbacks = dataUrl ? [
-                `https://baobabprince.github.io/ultimatevocalremovergui/converted_models/${baseName}.onnx.data`,
-                `https://raw.githubusercontent.com/baobabprince/ultimatevocalremovergui/master/converted_models/${baseName}.onnx.data`
+                `https://baobabprince.github.io/ultimatevocalremovergui/converted_models/UVR-DeNoise-Lite.onnx.data`,
+                `https://raw.githubusercontent.com/baobabprince/ultimatevocalremovergui/master/converted_models/UVR-DeNoise-Lite.onnx.data`
             ] : [];
 
             if (!onnxBytes) {
@@ -344,11 +341,9 @@ self.onmessage = async function (e) {
                 await setCache(name, onnxBytes);
                 self.postMessage({ status: "status", data: `${name} downloaded & cached.` });
             } else {
-                // Reject cached tiny/corrupt models
                 const cachedSize = onnxBytes.byteLength || (onnxBytes.length || 0);
                 if (cachedSize < 1000000) {
                     self.postMessage({ status: "status", data: `Cached model too small (${cachedSize} bytes) – re-downloading...` });
-                    onnxBytes = null;
                     onnxBytes = await fetchAsArrayBuffer(
                         url,
                         (percent) => {
