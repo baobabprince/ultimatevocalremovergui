@@ -54,18 +54,18 @@ const translations = {
 let currentLang = "en";
 let worker = null;
 let audioContext = null;
-let decodedAudio = null; // Stores leftChannel and rightChannel
+let decodedAudio = null;
 let selectedModelName = "UVR-DeNoise-Lite";
 
 const modelsList = [
     {
         name: "UVR-DeNoise-Lite",
+        // Single-file ONNX (no external .data) – avoids protobuf/external-data load failures
         url: "./converted_models/UVR-DeNoise-Lite.onnx",
-        dataUrl: "./converted_models/UVR-DeNoise-Lite.onnx.data"
+        dataUrl: null
     }
 ];
 
-// Re-initialize worker
 function initWorker() {
     if (worker) worker.terminate();
     worker = new Worker("worker.js");
@@ -113,7 +113,6 @@ function switchLanguage(lang) {
     document.documentElement.lang = lang;
     document.documentElement.dir = lang === "he" ? "rtl" : "ltr";
 
-    // Update labels and text contents
     document.getElementById("app-title").innerText = translations[lang].title;
     document.getElementById("app-subtitle").innerText = translations[lang].subtitle;
     document.getElementById("file-select-label").innerText = translations[lang].choose_file;
@@ -136,7 +135,6 @@ function switchLanguage(lang) {
     document.getElementById("match-btn").innerText = translations[lang].match_btn;
 }
 
-// File drop/upload handlers
 async function handleFile(file) {
     log(`Loading file: ${file.name} (${Math.round(file.size / 1024 / 1024 * 10) / 10} MB)...`);
     document.getElementById("file-name-display").innerText = file.name;
@@ -161,7 +159,6 @@ async function handleFile(file) {
         };
         log(`Successfully decoded ${audioBuffer.numberOfChannels} channels, sample rate: ${audioBuffer.sampleRate}Hz, length: ${Math.round(audioBuffer.duration)} seconds`);
 
-        // Load default model when file is selected
         loadModel();
     } catch (err) {
         log(`Error decoding file: ${err.message}`);
@@ -222,27 +219,23 @@ function handleResult(data) {
     resetUI();
 }
 
-// Stereo WAV exporter
 function writeWav(left, right, sampleRate) {
     const buffer = new ArrayBuffer(44 + left.length * 2 * 2);
     const view = new DataView(buffer);
 
-    // RIFF identifier
     writeString(view, 0, 'RIFF');
     view.setUint32(4, 36 + left.length * 2 * 2, true);
     writeString(view, 8, 'WAVE');
 
-    // FMT sub-chunk
     writeString(view, 12, 'fmt ');
-    view.setUint32(16, 16, true); // Subchunk1Size
-    view.setUint16(20, 1, true); // AudioFormat (PCM)
-    view.setUint16(22, 2, true); // NumChannels (Stereo)
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 2, true);
     view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * 4, true); // ByteRate
-    view.setUint16(32, 4, true); // BlockAlign
-    view.setUint16(34, 16, true); // BitsPerSample
+    view.setUint32(28, sampleRate * 4, true);
+    view.setUint16(32, 4, true);
+    view.setUint16(34, 16, true);
 
-    // data sub-chunk
     writeString(view, 36, 'data');
     view.setUint32(40, left.length * 2 * 2, true);
 
@@ -264,11 +257,9 @@ function writeString(view, offset, string) {
     }
 }
 
-// Initialization and DOM Event Listeners
 window.onload = function () {
     switchLanguage("en");
 
-    // Populate model selector
     const select = document.getElementById("model-select");
     modelsList.forEach(m => {
         const opt = document.createElement("option");
@@ -321,14 +312,12 @@ window.onload = function () {
         document.getElementById("stop-btn").disabled = false;
         log("Sending audio buffers to Web Worker for processing...");
 
-        // Extract pitch / stretch values
         const pitchVal = parseFloat(document.getElementById("pitch-shift-input").value) || 0;
         const stretchVal = parseFloat(document.getElementById("time-stretch-input").value) || 1.0;
 
         let left = decodedAudio.leftChannel;
         let right = decodedAudio.rightChannel;
 
-        // Apply pitch/stretch if requested before separation
         if (pitchVal !== 0 || stretchVal !== 1.0) {
             log("Applying pitch / time stretching audio pre-processing...");
             if (pitchVal !== 0) {
