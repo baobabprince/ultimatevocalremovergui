@@ -298,8 +298,8 @@ self.onmessage = async function (e) {
             self.postMessage({ status: "status", data: `checking cache for ${name}...` });
             let bytes = await getCache(name);
             const fallbacks = [
-                "https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/UVR_MDXNET_9482.onnx",
-                "https://huggingface.co/csukuangfj/sherpa-onnx-src-sep-models/resolve/main/UVR_MDXNET_9482.onnx"
+                "https://baobabprince.github.io/ultimatevocalremovergui/converted_models/UVR_MDXNET_9482.onnx",
+                "https://raw.githubusercontent.com/baobabprince/ultimatevocalremovergui/master/converted_models/UVR_MDXNET_9482.onnx"
             ];
             if (!bytes || (bytes.byteLength || bytes.length || 0) < 1e6) {
                 self.postMessage({ status: "status", data: `Downloading ${name} (~29 MB vocal separation model)...` });
