@@ -11,6 +11,8 @@ const translations = {
         stop: "Stop",
         download_vocals: "Download Vocals",
         download_instruments: "Download Instruments",
+        vocals_label: "Vocals",
+        inst_label: "Instruments",
         progress_download: "Download progress",
         progress_processing: "Separation progress",
         console_log: "Processing Log",
@@ -35,6 +37,8 @@ const translations = {
         stop: "עצור",
         download_vocals: "הורד שירה (Vocals)",
         download_instruments: "הורד כלי נגינה (Instruments)",
+        vocals_label: "שירה (Vocals)",
+        inst_label: "כלי נגינה (Instruments)",
         progress_download: "התקדמות הורדת המודל",
         progress_processing: "התקדמות הפרדת האודיו",
         console_log: "לוג פעילות עיבוד",
@@ -121,6 +125,10 @@ function switchLanguage(lang) {
     document.getElementById("stop-btn").innerText = translations[lang].stop;
     document.getElementById("download-vocals-btn").innerText = translations[lang].download_vocals;
     document.getElementById("download-inst-btn").innerText = translations[lang].download_instruments;
+    const vl = document.getElementById("vocals-result-label");
+    const il = document.getElementById("inst-result-label");
+    if (vl) vl.innerText = translations[lang].vocals_label;
+    if (il) il.innerText = translations[lang].inst_label;
     document.getElementById("download-label").innerText = translations[lang].progress_download;
     document.getElementById("processing-label").innerText = translations[lang].progress_processing;
     document.getElementById("log-label").innerText = translations[lang].console_log;
@@ -185,6 +193,9 @@ function resetUI() {
     updateProcessingProgress(0);
 }
 
+let lastVocalUrl = null;
+let lastInstUrl = null;
+
 function handleResult(data) {
     log("Reconstruction completed! Encoding to WAV files...");
     const { vocalLeft, vocalRight, instLeft, instRight } = data;
@@ -193,13 +204,32 @@ function handleResult(data) {
     const vocalBlob = writeWav(vocalLeft, vocalRight, sampleRate);
     const instBlob = writeWav(instLeft, instRight, sampleRate);
 
-    const vocalUrl = URL.createObjectURL(vocalBlob);
-    const instUrl = URL.createObjectURL(instBlob);
+    // Revoke previous object URLs to free memory
+    if (lastVocalUrl) URL.revokeObjectURL(lastVocalUrl);
+    if (lastInstUrl) URL.revokeObjectURL(lastInstUrl);
+
+    lastVocalUrl = URL.createObjectURL(vocalBlob);
+    lastInstUrl = URL.createObjectURL(instBlob);
+
+    // In-browser players
+    const resultsSection = document.getElementById("results-section");
+    resultsSection.style.display = "grid";
+
+    const vocalsPlayer = document.getElementById("vocals-player");
+    const instPlayer = document.getElementById("inst-player");
+    vocalsPlayer.src = lastVocalUrl;
+    instPlayer.src = lastInstUrl;
+    vocalsPlayer.load();
+    instPlayer.load();
+
+    // Pause one when the other plays
+    vocalsPlayer.onplay = () => { if (!instPlayer.paused) instPlayer.pause(); };
+    instPlayer.onplay = () => { if (!vocalsPlayer.paused) vocalsPlayer.pause(); };
 
     const vBtn = document.getElementById("download-vocals-btn");
     vBtn.onclick = () => {
         const a = document.createElement("a");
-        a.href = vocalUrl;
+        a.href = lastVocalUrl;
         a.download = `${decodedAudio.name}_(Vocals).wav`;
         a.click();
     };
@@ -208,13 +238,13 @@ function handleResult(data) {
     const iBtn = document.getElementById("download-inst-btn");
     iBtn.onclick = () => {
         const a = document.createElement("a");
-        a.href = instUrl;
+        a.href = lastInstUrl;
         a.download = `${decodedAudio.name}_(Instrumental).wav`;
         a.click();
     };
     iBtn.disabled = false;
 
-    log("Separation finished! Your files are ready to download.");
+    log("Separation finished! You can play or download the results.");
     resetUI();
 }
 

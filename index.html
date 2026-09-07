@@ -9,78 +9,66 @@
     <script src="app.js" defer></script>
 </head>
 <body>
-    <div class="container">
+    <div class="app-container">
         <header>
-            <div class="header-text">
-                <h1 id="app-title">Ultimate Vocal Remover - Web Edition</h1>
-                <p id="app-subtitle">Client-side Vocal & Instrumental separation running entirely in your browser</p>
-            </div>
+            <h1 id="app-title">Ultimate Vocal Remover - Web Edition</h1>
+            <p id="app-subtitle">Client-side Vocal & Instrumental separation running entirely in your browser</p>
             <button id="lang-toggle-btn" class="lang-btn">עברית</button>
         </header>
 
-        <main class="main-grid">
-            <!-- Audio Upload and Drop Zone -->
-            <section id="drag-drop-zone" class="drop-zone">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#00adb5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="17 8 12 3 7 8"></polyline>
-                    <line x1="12" y1="3" x2="12" y2="15"></line>
-                </svg>
-                <p id="file-select-label" style="font-weight: bold; margin-top: 12px; color: var(--text-primary);">Select Audio File</p>
-                <p id="drag-drop-text">or drag & drop file here</p>
+        <main>
+            <!-- File Select / Drop Zone -->
+            <section class="file-container" id="drag-drop-zone">
+                <div class="file-icon">🎵</div>
+                <p id="file-select-label">Select Audio File</p>
+                <p id="drag-drop-text" class="hint">or drag & drop file here</p>
+                <p id="file-name-display" class="file-name"></p>
                 <input type="file" id="audio-file-input" accept="audio/*" style="display: none;">
-                <div id="file-name-display" class="file-name"></div>
             </section>
 
-            <!-- Configuration & Audio Tools Row -->
-            <section class="options-section">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                    <div class="option-group">
-                        <label id="model-label" for="model-select">Choose Model</label>
-                        <select id="model-select">
-                            <!-- Models will be added dynamically by app.js -->
-                        </select>
-                    </div>
-                    <div class="option-group">
-                        <label id="format-label" for="format-select">Save Format</label>
-                        <select id="format-select">
-                            <option value="WAV">WAV (Lossless PCM)</option>
-                        </select>
-                    </div>
+            <!-- Model Selection -->
+            <section class="controls-row">
+                <div class="control-group">
+                    <label id="model-label" for="model-select">Choose Model</label>
+                    <select id="model-select"></select>
                 </div>
+                <div class="control-group">
+                    <label id="format-label" for="format-select">Save Format</label>
+                    <select id="format-select">
+                        <option value="wav">WAV</option>
+                    </select>
+                </div>
+            </section>
 
-                <!-- Custom Audio Tools (Pitch, Time stretch) -->
-                <div style="border-top: 1px solid var(--border-color); margin-top: 16px; padding-top: 16px;">
+            <!-- Audio Tools -->
+            <section class="tools-container">
+                <div class="tools-panel">
                     <h3 id="audio-tools-label" style="margin: 0 0 12px 0; font-size: 16px; color: var(--accent);">Audio Tools</h3>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                        <div class="option-group">
+                    <div class="tools-grid">
+                        <div class="control-group">
                             <label id="pitch-shift-label" for="pitch-shift-input">Pitch Shift (semitones)</label>
-                            <input type="number" id="pitch-shift-input" value="0" min="-12" max="12" step="1">
+                            <input type="number" id="pitch-shift-input" value="0" step="1" min="-12" max="12">
                         </div>
-                        <div class="option-group">
+                        <div class="control-group">
                             <label id="time-stretch-label" for="time-stretch-input">Time Stretch (factor)</label>
-                            <input type="number" id="time-stretch-input" value="1.0" min="0.5" max="2.0" step="0.1">
+                            <input type="number" id="time-stretch-input" value="1.0" step="0.1" min="0.5" max="2.0">
                         </div>
                     </div>
-                </div>
-
-                <!-- Align & Volume Match Options -->
-                <div style="border-top: 1px solid var(--border-color); margin-top: 16px; padding-top: 16px;">
-                    <label id="align-label" style="font-weight: bold; font-size: 14px; display: block; margin-bottom: 8px;">Align reference and target tracks</label>
-                    <div style="display: flex; gap: 12px;">
+                    <div class="tools-actions">
+                        <p id="align-label" style="font-size: 13px; opacity: 0.8;">Align reference and target tracks</p>
                         <button id="align-btn" class="btn btn-primary" style="font-size: 14px; padding: 10px;" disabled>Run Alignment</button>
                         <button id="match-btn" class="btn btn-primary" style="font-size: 14px; padding: 10px;" disabled>Match Volume (RMS)</button>
                     </div>
                 </div>
             </section>
 
-            <!-- Control Buttons -->
-            <section class="controls-row">
+            <!-- Action Buttons -->
+            <section class="actions-row">
                 <button id="convert-btn" class="btn btn-primary" disabled>Start Processing</button>
                 <button id="stop-btn" class="btn btn-danger" disabled>Stop</button>
             </section>
 
-            <!-- Progress Group -->
+            <!-- Progress Bars -->
             <section class="progress-container">
                 <div class="progress-group">
                     <div class="progress-header">
@@ -91,7 +79,6 @@
                         <div id="download-bar" class="progress-bar"></div>
                     </div>
                 </div>
-
                 <div class="progress-group">
                     <div class="progress-header">
                         <span id="processing-label">Separation progress</span>
@@ -103,10 +90,18 @@
                 </div>
             </section>
 
-            <!-- Download Outputs Row -->
-            <section class="downloads-container">
-                <button id="download-vocals-btn" class="btn" disabled>Download Vocals</button>
-                <button id="download-inst-btn" class="btn" disabled>Download Instruments</button>
+            <!-- Playback + Download Outputs -->
+            <section class="results-container" id="results-section" style="display:none;">
+                <div class="result-card">
+                    <h3 id="vocals-result-label">Vocals</h3>
+                    <audio id="vocals-player" controls preload="metadata"></audio>
+                    <button id="download-vocals-btn" class="btn" disabled>Download Vocals</button>
+                </div>
+                <div class="result-card">
+                    <h3 id="inst-result-label">Instruments</h3>
+                    <audio id="inst-player" controls preload="metadata"></audio>
+                    <button id="download-inst-btn" class="btn" disabled>Download Instruments</button>
+                </div>
             </section>
 
             <!-- Console Log -->
