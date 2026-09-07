@@ -59,12 +59,12 @@ let currentLang = "en";
 let worker = null;
 let audioContext = null;
 let decodedAudio = null;
-let selectedModelName = "UVR-DeNoise-Lite";
+let selectedModelName = "UVR_MDXNET_9482";
 
 const modelsList = [
     {
-        name: "UVR-DeNoise-Lite",
-        url: "./converted_models/UVR-DeNoise-Lite-single.onnx",
+        name: "UVR_MDXNET_9482",
+        url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/UVR_MDXNET_9482.onnx",
         dataUrl: null
     }
 ];
@@ -204,14 +204,12 @@ function handleResult(data) {
     const vocalBlob = writeWav(vocalLeft, vocalRight, sampleRate);
     const instBlob = writeWav(instLeft, instRight, sampleRate);
 
-    // Revoke previous object URLs to free memory
     if (lastVocalUrl) URL.revokeObjectURL(lastVocalUrl);
     if (lastInstUrl) URL.revokeObjectURL(lastInstUrl);
 
     lastVocalUrl = URL.createObjectURL(vocalBlob);
     lastInstUrl = URL.createObjectURL(instBlob);
 
-    // In-browser players
     const resultsSection = document.getElementById("results-section");
     resultsSection.style.display = "grid";
 
@@ -222,7 +220,6 @@ function handleResult(data) {
     vocalsPlayer.load();
     instPlayer.load();
 
-    // Pause one when the other plays
     vocalsPlayer.onplay = () => { if (!instPlayer.paused) instPlayer.pause(); };
     instPlayer.onplay = () => { if (!vocalsPlayer.paused) vocalsPlayer.pause(); };
 
