@@ -60,8 +60,7 @@ let selectedModelName = "UVR-DeNoise-Lite";
 const modelsList = [
     {
         name: "UVR-DeNoise-Lite",
-        // Single-file ONNX (no external .data) – avoids protobuf/external-data load failures
-        url: "./converted_models/UVR-DeNoise-Lite.onnx",
+        url: "./converted_models/UVR-DeNoise-Lite-single.onnx",
         dataUrl: null
     }
 ];
@@ -341,9 +340,11 @@ window.onload = function () {
     });
 
     document.getElementById("stop-btn").addEventListener("click", function () {
-        log("Halt requested. Terminating current Web Worker...");
-        initWorker();
-        resetUI();
+        if (worker) {
+            log("Halt requested. Terminating current Web Worker...");
+            initWorker();
+            resetUI();
+        }
     });
 
     document.getElementById("lang-toggle-btn").addEventListener("click", function () {
