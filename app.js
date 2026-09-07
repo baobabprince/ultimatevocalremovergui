@@ -64,7 +64,7 @@ let selectedModelName = "UVR_MDXNET_9482";
 const modelsList = [
     {
         name: "UVR_MDXNET_9482",
-        url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/UVR_MDXNET_9482.onnx",
+        url: "./converted_models/UVR_MDXNET_9482.onnx",
         dataUrl: null
     }
 ];
